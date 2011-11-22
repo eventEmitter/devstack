@@ -548,6 +548,18 @@ fi
 # it since we are going to run the services in screen for simple
 cp $FILES/screenrc ~/.screenrc
 
+# Syslog
+# ---------
+
+if [[ $SYSLOG != "False" ]]; then
+    # Enable rsyslog to receive messages on 514/udp
+    sudo sed -i -e '
+        /ModLoad.*imudp/s/^[#]//
+        /UDPServerRun/s/^[#]//
+    ' /etc/rsyslog.conf
+    sudo /usr/sbin/service rsyslog restart
+fi
+
 # Rabbit
 # ---------
 
@@ -1022,6 +1034,14 @@ if [[ "$ENABLED_SERVICES" =~ "key" ]]; then
     sudo sed -e "s,%ADMIN_PASSWORD%,$ADMIN_PASSWORD,g" -i $KEYSTONE_DATA
     # initialize keystone with default users/endpoints
     BIN_DIR=$KEYSTONE_DIR/bin bash $KEYSTONE_DATA
+
+    if [ "$SYSLOG" != "False" ]; then
+        sed -i -e '/^handlers=devel$/s/=devel/=production/' \
+            $KEYSTONE_DIR/etc/logging.cnf
+        sed -i -e "/^log_config/d;/^\[DEFAULT\]/a\
+            log_config=$KEYSTONE_DIR/etc/logging.cnf" \
+            $KEYSTONE_DIR/etc/keystone.conf
+    fi
 fi
 
 
