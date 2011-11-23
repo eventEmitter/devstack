@@ -754,46 +754,38 @@ fi
 if [[ "$ENABLED_SERVICES" =~ "swift" ]]; then
     # We first do a bit of setup by creating the directories and
     # changing the permissions so we can run it as our user.
+    
+    SWIFTDEVICE=${SWIFTDEVICE:-md2p1}
+
 
     USER_GROUP=$(id -g)
     sudo mkdir -p ${SWIFT_DATA_LOCATION}/drives
     sudo chown -R $USER:${USER_GROUP} ${SWIFT_DATA_LOCATION}/drives
 
-    # We then create a loopback disk and format it to XFS.
-    if [[ ! -e ${SWIFT_DATA_LOCATION}/drives/images/swift.img ]]; then
-        mkdir -p  ${SWIFT_DATA_LOCATION}/drives/images
-        sudo touch  ${SWIFT_DATA_LOCATION}/drives/images/swift.img
-        sudo chown $USER: ${SWIFT_DATA_LOCATION}/drives/images/swift.img
-
-        dd if=/dev/zero of=${SWIFT_DATA_LOCATION}/drives/images/swift.img \
-            bs=1024 count=0 seek=${SWIFT_LOOPBACK_DISK_SIZE}
-        mkfs.xfs -f -i size=1024  ${SWIFT_DATA_LOCATION}/drives/images/swift.img
-    fi
-
     # After the drive being created we mount the disk with a few mount
     # options to make it most efficient as possible for swift.
-    mkdir -p ${SWIFT_DATA_LOCATION}/drives/sdb1
-    if ! egrep -q ${SWIFT_DATA_LOCATION}/drives/sdb1 /proc/mounts; then
-        sudo mount -t xfs -o loop,noatime,nodiratime,nobarrier,logbufs=8  \
-            ${SWIFT_DATA_LOCATION}/drives/images/swift.img ${SWIFT_DATA_LOCATION}/drives/sdb1
+    mkdir -p ${SWIFT_DATA_LOCATION}/drives/${SWIFTDEVICE}
+    if ! egrep -q ${SWIFT_DATA_LOCATION}/drives/${SWIFTDEVICE} /proc/mounts; then
+        sudo mount -t xfs -o noatime,nodiratime,nobarrier,logbufs=8  \
+            /dev/${SWIFTDEVICE} ${SWIFT_DATA_LOCATION}/drives/${SWIFTDEVICE}
     fi
 
     # We then create link to that mounted location so swift would know
     # where to go.
-    for x in {1..4}; do sudo ln -sf ${SWIFT_DATA_LOCATION}/drives/sdb1/$x ${SWIFT_DATA_LOCATION}/$x; done
+    sudo ln -sf ${SWIFT_DATA_LOCATION}/drives/${SWIFTDEVICE}/1 ${SWIFT_DATA_LOCATION}/1
 
     # We now have to emulate a few different servers into one we
     # create all the directories needed for swift
     tmpd=""
-    for d in ${SWIFT_DATA_LOCATION}/drives/sdb1/{1..4} \
+    for d in ${SWIFT_DATA_LOCATION}/drives/${SWIFTDEVICE}/1 \
         ${SWIFT_CONFIG_LOCATION}/{object,container,account}-server \
-        ${SWIFT_DATA_LOCATION}/{1..4}/node/sdb1 /var/run/swift; do
+        ${SWIFT_DATA_LOCATION}/1/node/${SWIFTDEVICE} /var/run/swift; do
         [[ -d $d ]] && continue
         sudo install -o ${USER} -g $USER_GROUP -d $d
     done
 
    # We do want to make sure this is all owned by our user.
-   sudo chown -R $USER: ${SWIFT_DATA_LOCATION}/{1..4}/node
+   sudo chown -R $USER: ${SWIFT_DATA_LOCATION}/1/node
    sudo chown -R $USER: ${SWIFT_CONFIG_LOCATION}
 
    # swift-init has a bug using /etc/swift until bug #885595 is fixed
@@ -841,7 +833,7 @@ if [[ "$ENABLED_SERVICES" =~ "swift" ]]; then
        local log_facility=$3
        local node_number
 
-       for node_number in {1..4}; do
+       for node_number in {1}; do
            node_path=${SWIFT_DATA_LOCATION}/${node_number}
            sed -e "s,%SWIFT_CONFIG_LOCATION%,${SWIFT_CONFIG_LOCATION},;s,%USER%,$USER,;s,%NODE_PATH%,${node_path},;s,%BIND_PORT%,${bind_port},;s,%LOG_FACILITY%,${log_facility}," \
                $FILES/swift/${server_type}-server.conf > ${SWIFT_CONFIG_LOCATION}/${server_type}-server/${node_number}.conf
